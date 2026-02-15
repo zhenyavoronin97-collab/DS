@@ -1,12 +1,18 @@
-%%writefile data_loader.py
-
 import pandas as pd
 import requests
 from typing import Optional, Dict, Any
 
 class DataLoader:
+    """Класс для загрузки данных из различных источников."""
+
     @staticmethod
     def load_csv(file_path: str, **kwargs) -> pd.DataFrame:
+        """
+        Загружает данные из CSV-файла.
+        :param file_path: путь к файлу
+        :param kwargs: дополнительные параметры для pd.read_csv
+        :return: DataFrame
+        """
         try:
             df = pd.read_csv(file_path, **kwargs)
             print(f"CSV-файл '{file_path}' успешно загружен. Размер: {df.shape}")
@@ -17,6 +23,12 @@ class DataLoader:
 
     @staticmethod
     def load_json(file_path: str, **kwargs) -> pd.DataFrame:
+        """
+        Загружает данные из JSON-файла.
+        :param file_path: путь к файлу
+        :param kwargs: дополнительные параметры для pd.read_json
+        :return: DataFrame
+        """
         try:
             df = pd.read_json(file_path, **kwargs)
             print(f"JSON-файл '{file_path}' успешно загружен. Размер: {df.shape}")
@@ -27,6 +39,12 @@ class DataLoader:
 
     @staticmethod
     def load_api(url: str, params: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
+        """
+        Загружает данные из API (GET-запрос, ожидается JSON-ответ).
+        :param url: endpoint API
+        :param params: параметры запроса
+        :return: DataFrame
+        """
         try:
             response = requests.get(url, params=params)
             response.raise_for_status()

@@ -1,99 +1,157 @@
 import pandas as pd
 import numpy as np
-from data_loader import DataLoader
-from data_processing import DataProcessor
+import matplotlib.pyplot as plt
+import seaborn as sns
+from typing import Optional, List
 
-# 1. Загружаем данные из CSV (файл spotify_hits.csv должен лежать в папке)
-loader = DataLoader()
-df = loader.load_csv('spotify_long_tracks_2014_2024.csv', encoding='utf-8')  # при необходимости измените кодировку
+class DataProcessor:
+    """Класс для обработки DataFrame и визуализации."""
 
-print("\nПервые 5 строк датасета Spotify:")
-print(df.head())
+    def __init__(self, df: pd.DataFrame):
+        """
+        :param df: исходный DataFrame
+        """
+        self.df = df.copy()
+        self.plots = []  # список созданных графиков (объектов Figure)
 
-# 2. Создаём процессор
-proc = DataProcessor(df)
+    # ---------- Работа с пропущенными значениями ----------
+    def missing_values_count(self) -> pd.Series:
+        """Возвращает количество пропущенных значений в каждом столбце."""
+        return self.df.isnull().sum()
 
-# 3. Анализ пропущенных значений
-print("\n" + "="*50)
-print("АНАЛИЗ ПРОПУЩЕННЫХ ЗНАЧЕНИЙ")
-print("="*50)
-report = proc.missing_values_report()
+    def missing_values_report(self) -> pd.DataFrame:
+        """Формирует отчёт о пропущенных значениях (количество и доля)."""
+        missing_count = self.missing_values_count()
+        missing_percent = (missing_count / len(self.df)) * 100
+        report = pd.DataFrame({
+            'Количество пропусков': missing_count,
+            'Доля пропусков (%)': missing_percent
+        }).sort_values('Доля пропусков (%)', ascending=False)
+        print("Отчёт о пропущенных значениях:")
+        print(report)
+        return report
 
-# 4. Заполнение пропусков
-print("\n" + "="*50)
-print("ЗАПОЛНЕНИЕ ПРОПУСКОВ")
-print("="*50)
+    def fill_missing(self, column: str, method: str = 'mean', **kwargs) -> None:
+        """
+        Заполняет пропуски в указанном столбце заданным методом.
+        :param column: имя столбца
+        :param method: 'mean' - среднее, 'median' - медиана, 'mode' - мода, 'constant' - константа
+        :param kwargs: для метода 'constant' требуется параметр 'value'
+        """
+        if column not in self.df.columns:
+            raise ValueError(f"Столбец '{column}' не найден")
 
-# Заполняем числовые столбцы средним
-numeric_cols = proc.df.select_dtypes(include=[np.number]).columns.tolist()
-for col in numeric_cols:
-    if proc.df[col].isnull().any():
-        proc.fill_missing(col, method='mean')
+        if method == 'mean':
+            if not np.issubdtype(self.df[column].dtype, np.number):
+                raise TypeError("Метод 'mean' применим только к числовым столбцам")
+            fill_value = self.df[column].mean()
+        elif method == 'median':
+            if not np.issubdtype(self.df[column].dtype, np.number):
+                raise TypeError("Метод 'median' применим только к числовым столбцам")
+            fill_value = self.df[column].median()
+        elif method == 'mode':
+            mode_vals = self.df[column].mode(dropna=True)
+            if len(mode_vals) == 0:
+                raise ValueError(f"Нет моды для столбца '{column}'")
+            fill_value = mode_vals[0]
+        elif method == 'constant':
+            if 'value' not in kwargs:
+                raise ValueError("Для метода 'constant' необходимо указать параметр 'value'")
+            fill_value = kwargs['value']
+        else:
+            raise ValueError("Метод должен быть 'mean', 'median', 'mode' или 'constant'")
 
-# Заполняем категориальные столбцы модой (самым частым значением)
-cat_cols = proc.df.select_dtypes(include=['object']).columns.tolist()
-for col in cat_cols:
-    if proc.df[col].isnull().any():
-        proc.fill_missing(col, method='mode')
+        self.df[column].fillna(fill_value, inplace=True)
+        print(f"Пропуски в столбце '{column}' заполнены методом '{method}' (значение: {fill_value})")
 
-print("\nПосле заполнения пропусков:")
-print(proc.missing_values_count())
+    # ---------- Визуализация ----------
+    def add_histogram(self, column: str, bins: int = 30, **kwargs) -> None:
+        """
+        Добавляет гистограмму для указанного столбца.
+        Сохраняет объект Figure в список plots.
+        """
+        if column not in self.df.columns:
+            raise ValueError(f"Столбец '{column}' не найден")
+        if not np.issubdtype(self.df[column].dtype, np.number):
+            raise TypeError("Гистограмма строится только для числовых столбцов")
 
-# 5. Визуализация
-print("\n" + "="*50)
-print("ВИЗУАЛИЗАЦИЯ ДАННЫХ")
-print("="*50)
+        fig, ax = plt.subplots(figsize=(8, 5))
+        self.df[column].hist(bins=bins, ax=ax, **kwargs)
+        ax.set_title(f'Гистограмма: {column}')
+        ax.set_xlabel(column)
+        ax.set_ylabel('Частота')
+        self.plots.append(fig)
+        plt.close(fig)  # закрываем, чтобы не отображать сейчас
+        print(f"Гистограмма для столбца '{column}' добавлена в список.")
 
-# 5.1 Гистограмма популярности треков
-if 'popularity' in proc.df.columns:
-    proc.add_histogram('popularity', bins=20, color='green', edgecolor='black', alpha=0.7)
+    def add_lineplot(self, x: str, y: str, **kwargs) -> None:
+        """
+        Добавляет линейный график (зависимость y от x).
+        Для упорядочивания по x данные сортируются.
+        """
+        for col in [x, y]:
+            if col not in self.df.columns:
+                raise ValueError(f"Столбец '{col}' не найден")
+        if not np.issubdtype(self.df[x].dtype, np.number) or not np.issubdtype(self.df[y].dtype, np.number):
+            raise TypeError("Линейный график требует числовые столбцы")
 
-# 5.2 Гистограмма энергии
-if 'energy' in proc.df.columns:
-    proc.add_histogram('energy', bins=20, color='orange', edgecolor='black', alpha=0.7)
+        fig, ax = plt.subplots(figsize=(8, 5))
+        sorted_df = self.df.sort_values(by=x)
+        ax.plot(sorted_df[x], sorted_df[y], **kwargs)
+        ax.set_title(f'Линейный график: {y} от {x}')
+        ax.set_xlabel(x)
+        ax.set_ylabel(y)
+        self.plots.append(fig)
+        plt.close(fig)
+        print(f"Линейный график ({y} от {x}) добавлен в список.")
 
-# 5.3 Линейный график: средняя популярность по годам
-if 'year' in proc.df.columns and 'popularity' in proc.df.columns:
-    # Группируем по году и считаем среднюю популярность
-    yearly_pop = proc.df.groupby('year')['popularity'].mean().reset_index()
-    # Создаём временный процессор для агрегированных данных
-    agg_proc = DataProcessor(yearly_pop)
-    agg_proc.add_lineplot(x='year', y='popularity', marker='o', linestyle='-', color='red')
-    # Добавляем его график в основной список
-    proc.plots.extend(agg_proc.plots)
-    print("Линейный график средней популярности по годам добавлен.")
+    def add_scatter(self, x: str, y: str, hue: Optional[str] = None, **kwargs) -> None:
+        """
+        Добавляет диаграмму рассеяния (scatter plot).
+        :param hue: имя столбца для цветовой группировки (опционально)
+        """
+        for col in [x, y]:
+            if col not in self.df.columns:
+                raise ValueError(f"Столбец '{col}' не найден")
+        if not np.issubdtype(self.df[x].dtype, np.number) or not np.issubdtype(self.df[y].dtype, np.number):
+            raise TypeError("Диаграмма рассеяния требует числовые столбцы")
 
-# 5.4 Диаграмма рассеяния: энергия vs танцевальность с окраской по году
-if all(col in proc.df.columns for col in ['energy', 'danceability', 'year']):
-    # Создаём категориальный признак года для наглядности (разбиваем на 5 интервалов)
-    proc.df['year_cat'] = pd.cut(proc.df['year'], bins=5, labels=False)
-    proc.add_scatter(x='energy', y='danceability', hue='year_cat', alpha=0.6, palette='viridis')
-    # Удаляем временный столбец
-    proc.df.drop('year_cat', axis=1, inplace=True)
-else:
-    if 'energy' in proc.df.columns and 'danceability' in proc.df.columns:
-        proc.add_scatter(x='energy', y='danceability', alpha=0.5)
+        fig, ax = plt.subplots(figsize=(8, 5))
+        if hue is not None:
+            if hue not in self.df.columns:
+                raise ValueError(f"Столбец '{hue}' не найден")
+            sns.scatterplot(data=self.df, x=x, y=y, hue=hue, ax=ax, **kwargs)
+        else:
+            ax.scatter(self.df[x], self.df[y], **kwargs)
+        ax.set_title(f'Диаграмма рассеяния: {y} от {x}')
+        ax.set_xlabel(x)
+        ax.set_ylabel(y)
+        self.plots.append(fig)
+        plt.close(fig)
+        print(f"Диаграмма рассеяния ({y} от {x}) добавлена в список.")
 
-# Добавим ещё один график для демонстрации удаления
-if 'tempo' in proc.df.columns:
-    proc.add_histogram('tempo', bins=30, color='purple', alpha=0.5)
+    def remove_last_plot(self) -> None:
+        """Удаляет последний добавленный график (если есть)."""
+        if self.plots:
+            self.plots.pop()
+            print(f"График удалён. Осталось графиков: {len(self.plots)}")
+        else:
+            print("Список графиков пуст, нечего удалять.")
 
-print(f"\nВсего графиков создано: {len(proc.plots)}")
+    def show_all_plots(self) -> None:
+        """Отображает все накопленные графики."""
+        if not self.plots:
+            print("Нет графиков для отображения.")
+            return
+        for fig in self.plots:
+            fig.show()
+        plt.show()
 
-# Удаляем последний график (tempo)
-proc.remove_last_plot()
-print(f"После удаления осталось графиков: {len(proc.plots)}")
+    # ---------- Дополнительные методы проверки данных ----------
+    def check_data_types(self) -> pd.Series:
+        """Возвращает типы данных столбцов."""
+        return self.df.dtypes
 
-# 6. Отображение всех графиков
-print("\nОткрытие окон с графиками (закройте их для продолжения)...")
-proc.show_all_plots()
-
-# 7. Дополнительная информация
-print("\n" + "="*50)
-print("ТИПЫ ДАННЫХ И СТАТИСТИКА")
-print("="*50)
-print("\nТипы столбцов:")
-print(proc.check_data_types())
-
-print("\nСтатистическое описание:")
-print(proc.summary_statistics())
+    def summary_statistics(self) -> pd.DataFrame:
+        """Возвращает описательную статистику для всех столбцов."""
+        return self.df.describe(include='all')

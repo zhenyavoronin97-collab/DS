@@ -1,5 +1,3 @@
-%%writefile data_processing.py
-
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -7,15 +5,22 @@ import seaborn as sns
 from typing import Optional, List
 
 class DataProcessor:
-    def __init__(self, df: pd.DataFrame):
-        self.df = df.copy()
-        self.plots = []
+    """Класс для обработки DataFrame и визуализации."""
 
-    # Пропуски
+    def __init__(self, df: pd.DataFrame):
+        """
+        :param df: исходный DataFrame
+        """
+        self.df = df.copy()
+        self.plots = []  # список созданных графиков (объектов Figure)
+
+    # ---------- Работа с пропущенными значениями ----------
     def missing_values_count(self) -> pd.Series:
+        """Возвращает количество пропущенных значений в каждом столбце."""
         return self.df.isnull().sum()
 
     def missing_values_report(self) -> pd.DataFrame:
+        """Формирует отчёт о пропущенных значениях (количество и доля)."""
         missing_count = self.missing_values_count()
         missing_percent = (missing_count / len(self.df)) * 100
         report = pd.DataFrame({
@@ -27,8 +32,15 @@ class DataProcessor:
         return report
 
     def fill_missing(self, column: str, method: str = 'mean', **kwargs) -> None:
+        """
+        Заполняет пропуски в указанном столбце заданным методом.
+        :param column: имя столбца
+        :param method: 'mean' - среднее, 'median' - медиана, 'mode' - мода, 'constant' - константа
+        :param kwargs: для метода 'constant' требуется параметр 'value'
+        """
         if column not in self.df.columns:
             raise ValueError(f"Столбец '{column}' не найден")
+
         if method == 'mean':
             if not np.issubdtype(self.df[column].dtype, np.number):
                 raise TypeError("Метод 'mean' применим только к числовым столбцам")
@@ -48,30 +60,41 @@ class DataProcessor:
             fill_value = kwargs['value']
         else:
             raise ValueError("Метод должен быть 'mean', 'median', 'mode' или 'constant'")
+
         self.df[column].fillna(fill_value, inplace=True)
         print(f"Пропуски в столбце '{column}' заполнены методом '{method}' (значение: {fill_value})")
 
-    # Визуализация
+    # ---------- Визуализация ----------
     def add_histogram(self, column: str, bins: int = 30, **kwargs) -> None:
+        """
+        Добавляет гистограмму для указанного столбца.
+        Сохраняет объект Figure в список plots.
+        """
         if column not in self.df.columns:
             raise ValueError(f"Столбец '{column}' не найден")
         if not np.issubdtype(self.df[column].dtype, np.number):
             raise TypeError("Гистограмма строится только для числовых столбцов")
+
         fig, ax = plt.subplots(figsize=(8, 5))
         self.df[column].hist(bins=bins, ax=ax, **kwargs)
         ax.set_title(f'Гистограмма: {column}')
         ax.set_xlabel(column)
         ax.set_ylabel('Частота')
         self.plots.append(fig)
-        plt.close(fig)
+        plt.close(fig)  # закрываем, чтобы не отображать сейчас
         print(f"Гистограмма для столбца '{column}' добавлена в список.")
 
     def add_lineplot(self, x: str, y: str, **kwargs) -> None:
+        """
+        Добавляет линейный график (зависимость y от x).
+        Для упорядочивания по x данные сортируются.
+        """
         for col in [x, y]:
             if col not in self.df.columns:
                 raise ValueError(f"Столбец '{col}' не найден")
         if not np.issubdtype(self.df[x].dtype, np.number) or not np.issubdtype(self.df[y].dtype, np.number):
             raise TypeError("Линейный график требует числовые столбцы")
+
         fig, ax = plt.subplots(figsize=(8, 5))
         sorted_df = self.df.sort_values(by=x)
         ax.plot(sorted_df[x], sorted_df[y], **kwargs)
@@ -83,11 +106,16 @@ class DataProcessor:
         print(f"Линейный график ({y} от {x}) добавлен в список.")
 
     def add_scatter(self, x: str, y: str, hue: Optional[str] = None, **kwargs) -> None:
+        """
+        Добавляет диаграмму рассеяния (scatter plot).
+        :param hue: имя столбца для цветовой группировки (опционально)
+        """
         for col in [x, y]:
             if col not in self.df.columns:
                 raise ValueError(f"Столбец '{col}' не найден")
         if not np.issubdtype(self.df[x].dtype, np.number) or not np.issubdtype(self.df[y].dtype, np.number):
             raise TypeError("Диаграмма рассеяния требует числовые столбцы")
+
         fig, ax = plt.subplots(figsize=(8, 5))
         if hue is not None:
             if hue not in self.df.columns:
@@ -103,6 +131,7 @@ class DataProcessor:
         print(f"Диаграмма рассеяния ({y} от {x}) добавлена в список.")
 
     def remove_last_plot(self) -> None:
+        """Удаляет последний добавленный график (если есть)."""
         if self.plots:
             self.plots.pop()
             print(f"График удалён. Осталось графиков: {len(self.plots)}")
@@ -110,6 +139,7 @@ class DataProcessor:
             print("Список графиков пуст, нечего удалять.")
 
     def show_all_plots(self) -> None:
+        """Отображает все накопленные графики."""
         if not self.plots:
             print("Нет графиков для отображения.")
             return
@@ -117,8 +147,11 @@ class DataProcessor:
             fig.show()
         plt.show()
 
+    # ---------- Дополнительные методы проверки данных ----------
     def check_data_types(self) -> pd.Series:
+        """Возвращает типы данных столбцов."""
         return self.df.dtypes
 
     def summary_statistics(self) -> pd.DataFrame:
+        """Возвращает описательную статистику для всех столбцов."""
         return self.df.describe(include='all')
